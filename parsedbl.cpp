@@ -363,7 +363,6 @@ parse_double(const char *ch, double &v)
                 TRANSITION(significant_integral, insignificant_integral);
                 goto insignificant_integral;
             }
-            digit = *ch - '0';
         }
     }
     if (*ch == '.' || *ch == ',') {
