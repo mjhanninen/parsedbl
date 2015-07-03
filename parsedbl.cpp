@@ -1,12 +1,10 @@
 /* parsedbl.cpp -- parses strings to IEEE doubles
    Copyright (c) 2015 Matti Hänninen */
 
-#include <iostream>
-#include <iomanip>
 #include <cinttypes>
+#include <limits>
 
 /*
-
 MSVC doesn't support the POSIX functions for bit scanning. I'll probably need
 to use something like this (ripped from Redis sources) on Windog. We'll see.
 
@@ -35,38 +33,54 @@ static __forceinline int ffs(int x)
 #endif
 
 */
-
 #include <strings.h>
 
-#define DEBUG
-
 #ifdef DEBUG
+
+#include <bitset>
+#include <iomanip>
+#include <iostream>
+
 #define LOOKING_AT(X)    (looking_at(X))
 #define TRANSITION(X,Y)  (announce_transition(#X,#Y))
-#else
-#define LOOKING_AT(X)
-#define TRANSITION(X,Y)
-#endif
 
-void
+static void
 looking_at(const char *ch)
 {
     std::cout << "Looking at '" << reinterpret_cast<const char *>(ch)
               << "'" << std::endl;
 }
 
-void
+static void
 announce_transition(const std::string from, const std::string to)
 {
     std::cout << "State transition: " << from << " -> " << to << std::endl;
 }
 
-const int min_power_of_ten = -323;
-const int max_power_of_ten = 308;
-const size_t powers_of_ten_count = max_power_of_ten - min_power_of_ten + 1;
-const size_t index_of_one = -min_power_of_ten;
+#define DISPLAY_STATE() { \
+    std::bitset<64> mantissa_bits(mantissa); \
+    std::cout << "State:" << std::endl \
+              << "  decimal_count = " << decimal_count << std::endl \
+              << "  zero_count    = " << zero_count << std::endl \
+              << "  digits_left   = " << digits_left << std::endl \
+              << "  mantissa      = " << mantissa << std::endl \
+              << "                = " << mantissa_bits << std::endl; \
+}
 
-const uint64_t u_powers_of_ten[powers_of_ten_count] = {
+#else // DEBUG
+
+#define LOOKING_AT(X)
+#define TRANSITION(X,Y)
+#define DISPLAY_STATE()
+
+#endif // DEBUG
+
+static const int min_power_of_ten = -323;
+static const int max_power_of_ten = 308;
+static const size_t powers_of_ten_count = max_power_of_ten - min_power_of_ten + 1;
+static const size_t index_of_one = -min_power_of_ten;
+
+static const uint64_t u_powers_of_ten[powers_of_ten_count] = {
     0x0000000000000002, 0x0000000000000014, 0x00000000000000CA, 0x00000000000007E8,
     0x0000000000004F10, 0x00000000000316A2, 0x00000000001EE257, 0x000000000134D761,
     0x000000000C1069CD, 0x0000000078A42205, 0x00000004B6695433, 0x0000002F201D49FB,
@@ -227,7 +241,7 @@ const uint64_t u_powers_of_ten[powers_of_ten_count] = {
     0x7F423A516E82D9BA, 0x7F76C8E5CA239029, 0x7FAC7B1F3CAC7433, 0x7FE1CCF385EBC8A0
 };
 
-const double *powers_of_ten = reinterpret_cast<const double *>(u_powers_of_ten);
+static const double *powers_of_ten = reinterpret_cast<const double *>(u_powers_of_ten);
 
 bool
 parse_double(const char *ch, double &v)
@@ -264,7 +278,11 @@ parse_double(const char *ch, double &v)
                                         // encountered since the decimal mark
                                         // regardless of their singificance.
 
-    uint32_t digits_left = 16;          // Tracks how many significant digits we
+    // FIXME: Constraining this to 15 (used to be 16) averts the bug mentioned
+    // below at the cost of decreasing accuracy. Revert back to 16 once you've
+    // figure out how to fix the bug.
+
+    uint32_t digits_left = 15;          // Tracks how many significant digits we
                                         // still want to collect to the mantissa
                                         // (if available).
                                         //
@@ -457,6 +475,8 @@ parse_double(const char *ch, double &v)
 
   finish:
 
+    DISPLAY_STATE();
+
     if (*ch != '\0' && *ch != ' ' && *ch != '\t') {
         LOOKING_AT(ch);
         return false;
@@ -471,13 +491,16 @@ parse_double(const char *ch, double &v)
 
     exp10 += zero_count - decimal_count;
     if (exp10 < min_power_of_ten) {
+        v = 0.0;
         return false;
     }
     if (exp10 > max_power_of_ten) {
+        v = (is_exp10_neg ? -1.0 : 1.0) * std::numeric_limits<double>::infinity();
         return false;
     }
     leading_bit = flsl(mantissa);
     if (leading_bit > 53) {
+        // FIXME: There's a thoughtbug in this case. Think about it.
         result.u = mantissa >> (leading_bit - 53);
     }
     else if (leading_bit < 53) {
@@ -488,18 +511,4 @@ parse_double(const char *ch, double &v)
     result.d *= powers_of_ten[exp10 + index_of_one];
     v = result.d;
     return true;
-}
-
-int
-main(int argc, char *argv[])
-{
-    double x;
-    bool r;
-    for (size_t i = 1; i < argc; i++) {
-        r = parse_double(argv[i], x);
-        std::cout << "ARG(" << i << ") = '" << argv[i]
-                  << "' -> " << std::setprecision(15) << x
-                  << " (" << (r ? "SUCCESS" : "FAILURE") << ")"
-                  << std::endl;
-    }
 }
