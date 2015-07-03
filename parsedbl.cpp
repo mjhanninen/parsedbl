@@ -476,26 +476,22 @@ parse_double(const char *ch, double &v)
   finish:
 
     DISPLAY_STATE();
-
     if (*ch != '\0' && *ch != ' ' && *ch != '\t') {
         LOOKING_AT(ch);
         return false;
     }
-
-    // Is it a zero?
-
     if (!mantissa) {
         v = 0.0;
         return true;
     }
-
     exp10 += zero_count - decimal_count;
     if (exp10 < min_power_of_ten) {
         v = 0.0;
         return false;
     }
     if (exp10 > max_power_of_ten) {
-        v = (is_exp10_neg ? -1.0 : 1.0) * std::numeric_limits<double>::infinity();
+        v = (is_exp10_neg ? -1.0 : 1.0) *
+            std::numeric_limits<double>::infinity();
         return false;
     }
     leading_bit = flsl(mantissa);
